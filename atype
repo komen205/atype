@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# atype - Type text into Android with the built-in input command
+# Usage: atype "text to type"
+#        atype enter|tab|backspace|clear
+#        atype (interactive mode - supports same special keys)
+
+set -euo pipefail
+
+if [ -n "${ADB:-}" ]; then
+    ADB_BIN="$ADB"
+elif [ -x "$HOME/Library/Android/sdk/platform-tools/adb" ]; then
+    ADB_BIN="$HOME/Library/Android/sdk/platform-tools/adb"
+elif command -v adb >/dev/null 2>&1; then
+    ADB_BIN="$(command -v adb)"
+else
+    echo "atype: adb not found; set ADB to its full path" >&2
+    exit 1
+fi
+
+send() {
+    local input_text="${1// /%s}"
+    # Single-quote the payload so the device shell does not expand $, `, etc.
+    # (e.g. $$ would otherwise become the device shell's PID.)
+    # Any embedded single quote is escaped as the classic '\'' sequence.
+    local q=\'\\\'\'
+    local escaped="${input_text//\'/$q}"
+    "$ADB_BIN" shell input text "'$escaped'" > /dev/null
+}
+keycode() { "$ADB_BIN" shell input keyevent "$1" > /dev/null; }
+clear() {
+    "$ADB_BIN" shell input keycombination KEYCODE_CTRL_LEFT KEYCODE_A > /dev/null
+    keycode KEYCODE_DEL
+}
+
+handle() {
+    case "$1" in
+        enter)     keycode 66 ;;
+        tab)       keycode 61 ;;
+        backspace) keycode 67 ;;
+        delete)    keycode 112 ;;
+        escape)    keycode 111 ;;
+        clear)     clear ;;
+        *)         send "$1" ;;
+    esac
+}
+
+if [ -n "${1:-}" ]; then
+    handle "$1"
+else
+    while IFS= read -r -p "atype> " line; do
+        [ -z "$line" ] && continue
+        handle "$line"
+    done
+fi
